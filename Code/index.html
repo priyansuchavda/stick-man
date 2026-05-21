@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Stick Man</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div id="score"></div>
+        <div id="timer">15</div>
+        <canvas id="game" width="375" height="375"></canvas>
+        <div id="introduction">Hold down (or touch) to stretch out a stick</div>
+        <div id="perfect">DOUBLE SCORE</div>
+        <button id="restart">RESTART</button>
+        
+        <!-- Start Screen -->
+        <div id="startScreen" class="start-screen">
+            <h1 id="gameTitle">STICK MAN</h1>
+            <button id="playButton">PLAY</button>
+        </div>
+        
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="game-over-screen">
+            <h1 id="gameOverTitle">GAME OVER</h1>
+            <div id="finalScoreContainer">
+                <p id="finalScoreLabel">Score</p>
+                <p id="finalScore">0</p>
+            </div>
+            <button id="backButton">BACK</button>
+        </div>
+    </div>
+
+</body>
+<script src="script.js"></script>
+</html>
+
+
