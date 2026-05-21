@@ -1,17 +1,4 @@
-// ============================================
-// Flutter Integration Variables
-// ============================================
-var poolId = null;
-var sessionId = null;
-var authToken = null;
-var gameStartTime = null;
-var gameTimerDuration = 15; // Default timer duration in seconds
-var apiServerUrl = 'https://api.metaninza.net'; // Default API server URL
-
-// Session and submission state tracking
-var sessionReady = false; // Track if session parameters are ready
-var scoreSubmitting = false; // Track if score is being submitted
-var scoreSubmissionComplete = false; // Track if score submission is complete
+var gameTimerDuration = 30; // Default timer duration in seconds
 
 // Extend the base functionality of JavaScript
 Array.prototype.last = function () {
@@ -38,7 +25,7 @@ Array.prototype.last = function () {
   // Todo: Save high score to localStorage (?)
   
   let score = 0;
-  let gameTimer = 15; // 15 seconds countdown
+  let gameTimer = 30; // 30 seconds countdown
   let timerStartTime = null;
   let isTimerRunning = false;
   
@@ -87,318 +74,18 @@ Array.prototype.last = function () {
   const backButton = document.getElementById("backButton");
   const gameTitle = document.getElementById("gameTitle");
   
-  // ============================================
-  // Flutter Integration Functions
-  // ============================================
-  
-  // Get URL parameters for Flutter integration (fallback method)
-  function getUrlParameter(name) {
-    name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
-    var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
-    var results = regex.exec(location.search);
-    return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
-  }
-  
-  // Initialize Flutter parameters - priority: window.__GAME_SESSION__ > URL params > postMessage
-  function initFlutterParams() {
-    // Request Flutter for parameters if not available
-    if (!window.__GAME_SESSION__ && !sessionId && !authToken) {
-      console.log('Requesting Flutter for session parameters...');
-      // Try to request via postMessage
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'requestSessionParams' }, '*');
-      } else if (window.flutter_inappwebview) {
-        window.flutter_inappwebview.callHandler('requestSessionParams');
-      }
-    }
-    
-    // First, try to get from window.__GAME_SESSION__ (Flutter InAppWebView injection)
-    if (window.__GAME_SESSION__) {
-      sessionId = window.__GAME_SESSION__.sessionId;
-      authToken = window.__GAME_SESSION__.token;
-      
-      // Check if session has expired
-      if (window.__GAME_SESSION__.expiresAt && Date.now() > window.__GAME_SESSION__.expiresAt) {
-        console.warn('Game session has expired');
-        sessionId = null;
-        authToken = null;
-      }
-      
-      // poolId might be in the session object or URL
-      if (window.__GAME_SESSION__.poolId) {
-        poolId = window.__GAME_SESSION__.poolId;
-      } else {
-        poolId = getUrlParameter('poolId');
-      }
-      
-      // Get timer duration from Flutter (in seconds)
-      if (window.__GAME_SESSION__.timerDuration !== undefined) {
-        gameTimerDuration = parseInt(window.__GAME_SESSION__.timerDuration) || 15;
-      } else if (window.__GAME_SESSION__.timer !== undefined) {
-        gameTimerDuration = parseInt(window.__GAME_SESSION__.timer) || 15;
-      }
-      
-      // Get API server URL from Flutter
-      if (window.__GAME_SESSION__.apiServerUrl) {
-        apiServerUrl = window.__GAME_SESSION__.apiServerUrl;
-      } else if (window.__GAME_SESSION__.apiServer) {
-        apiServerUrl = window.__GAME_SESSION__.apiServer;
-      }
-    } else {
-      // Fallback to URL parameters
-      poolId = getUrlParameter('poolId');
-      sessionId = getUrlParameter('sessionId');
-      authToken = getUrlParameter('authToken');
-      
-      // Get timer from URL parameter if available
-      var urlTimer = getUrlParameter('timer');
-      if (urlTimer) {
-        gameTimerDuration = parseInt(urlTimer) || 15;
-      }
-      
-      // Get API server URL from URL parameter if available
-      var urlApiServer = getUrlParameter('apiServerUrl') || getUrlParameter('apiServer');
-      if (urlApiServer) {
-        apiServerUrl = urlApiServer;
-      }
-    }
-    
-    // Also listen for postMessage if embedded (additional fallback)
-    if (window.parent && window.parent !== window) {
-      window.addEventListener('message', function(event) {
-        if (event.data && event.data.type === 'flutterParams') {
-          poolId = event.data.poolId || poolId;
-          sessionId = event.data.sessionId || sessionId;
-          authToken = event.data.authToken || authToken;
-          if (event.data.timerDuration) {
-            gameTimerDuration = parseInt(event.data.timerDuration) || 15;
-          }
-          if (event.data.apiServerUrl || event.data.apiServer) {
-            apiServerUrl = event.data.apiServerUrl || event.data.apiServer;
-          }
-          // Update session ready flag
-          if (sessionId && authToken) {
-            sessionReady = true;
-            // Show play button if on start screen
-            if (phase === "waiting") {
-              showPlayButton();
-            }
-          }
-        }
-      });
-    }
-    
-    // Debug mode: Allow setting session via URL parameter for testing
-    var debugMode = getUrlParameter('debug') === 'true';
-    if (debugMode && !sessionId && !authToken) {
-      // For testing: allow setting via URL parameters when debug=true
-      poolId = getUrlParameter('poolId') || poolId || 'test-pool-123';
-      sessionId = getUrlParameter('sessionId') || sessionId || 'test-session-456';
-      authToken = getUrlParameter('authToken') || authToken || 'test-token-789';
-      console.log('DEBUG MODE: Using test parameters');
-    }
-    
-    // Update session ready flag
-    if (sessionId && authToken) {
-      sessionReady = true;
-      console.log('Flutter session initialized successfully', {
-        poolId: poolId,
-        sessionId: sessionId,
-        timerDuration: gameTimerDuration,
-        apiServerUrl: apiServerUrl
-      });
-    } else {
-      sessionReady = false;
-      console.log('Flutter session parameters not found - waiting for session...');
-    }
-  }
-  
-  // Function to check session and update UI
-  function checkSessionAndUpdateUI() {
-    var wasReady = sessionReady;
-    initFlutterParams();
-    
-    // If session just became ready, show the play button
-    if (sessionReady && !wasReady) {
-      // Show play button if on start screen
-      if (phase === "waiting") {
-        showPlayButton();
-      }
-    }
-    
-    // If session is not ready, keep checking periodically
-    if (!sessionReady) {
-      setTimeout(checkSessionAndUpdateUI, 500);
-    }
-  }
-  
-  // Show/hide play button based on session
+  // Show/hide play button
   function showPlayButton() {
-    if (sessionReady) {
-      playButton.style.display = 'block';
-      if (gameTitle) {
-        gameTitle.textContent = 'STICK MAN';
-      }
-    } else {
-      playButton.style.display = 'none';
-      if (gameTitle) {
-        gameTitle.textContent = 'Setting up your session...';
-      }
+    playButton.style.display = 'block';
+    if (gameTitle) {
+      gameTitle.textContent = 'STICK MAN';
     }
   }
   
   function hidePlayButton() {
     playButton.style.display = 'none';
   }
-  
-  // Send message to Flutter app (for API responses, errors, etc.)
-  function sendMessageToFlutter(type, data) {
-    var message = {
-      type: type,
-      data: data
-    };
-    
-    if (window.parent && window.parent !== window) {
-      // If in iframe, send message to parent
-      window.parent.postMessage(message, '*');
-    } else if (window.flutter_inappwebview) {
-      // If using Flutter InAppWebView
-      window.flutter_inappwebview.callHandler('onMessage', message);
-    } else {
-      console.log('Flutter message:', message);
-    }
-  }
-  
-  // Submit score to Flutter backend
-  function submitScoreToFlutter() {
-    // Prevent multiple submissions - check if already submitting or completed
-    if (scoreSubmitting) {
-      console.log('Score submission already in progress. Skipping duplicate submission.');
-      return;
-    }
-    
-    if (scoreSubmissionComplete) {
-      console.log('Score already submitted. Skipping duplicate submission.');
-      return;
-    }
-    
-    // Check if required parameters are available
-    if (!poolId || !sessionId || !authToken) {
-      console.log('Flutter parameters not available. Score not submitted.');
-      // Mark as complete even without submission to prevent retries
-      scoreSubmissionComplete = true;
-      // Show back button if no session
-      showBackButton();
-      updateGameOverMessage('GAME OVER');
-      return;
-    }
-    
-    // Mark that we're submitting
-    scoreSubmitting = true;
-    scoreSubmissionComplete = false;
-    
-    // Calculate time taken in seconds
-    var timeTaken = gameTimerDuration; // Default to full timer duration
-    
-    if (gameTimer !== undefined && gameTimer > 0) {
-      // Game ended early, calculate time taken
-      timeTaken = gameTimerDuration - gameTimer;
-      timeTaken = Math.ceil(timeTaken);
-    } else if (gameTimer !== undefined && gameTimer <= 0) {
-      // Timer reached 0, full timer duration
-      timeTaken = gameTimerDuration;
-    }
-    
-    // Ensure time is at least 1 second and at most timer duration
-    timeTaken = Math.max(1, Math.min(gameTimerDuration, timeTaken));
-    
-    // Use injected API server URL or default
-    var baseUrl = apiServerUrl || 'https://api.metaninza.net';
-    baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
-    var url = baseUrl + '/api/v1/game-pools/' + poolId + '/sessions/' + sessionId + '/submit-score';
-    var data = {
-      score: score,
-      time: timeTaken
-    };
-    
-    // Make API request
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + authToken
-      },
-      body: JSON.stringify(data)
-    })
-    .then(async response => {
-      var responseData;
-      try {
-        responseData = await response.json();
-      } catch (e) {
-        responseData = {
-          error: 'Failed to parse response',
-          message: response.statusText || 'Unknown error',
-          status: response.status
-        };
-      }
-      
-      if (!response.ok) {
-        // Error - send to Flutter
-        console.error('Error submitting score:', responseData);
-        sendMessageToFlutter('scoreSubmitError', {
-          status: response.status,
-          error: responseData
-        });
-        // Mark submission complete and show back button
-        scoreSubmitting = false;
-        scoreSubmissionComplete = true;
-        updateGameOverMessage('GAME OVER');
-        showBackButton();
-        return;
-      }
-      
-      // Success - send to Flutter
-      console.log('Score submitted successfully:', responseData);
-      sendMessageToFlutter('scoreSubmitSuccess', {
-        status: response.status,
-        data: responseData
-      });
-      
-      // Mark submission complete and show back button
-      scoreSubmitting = false;
-      scoreSubmissionComplete = true;
-      updateGameOverMessage('GAME OVER');
-      showBackButton();
-    })
-    .catch(error => {
-      // Network error
-      console.error('Error submitting score:', error);
-      var errorData = {
-        error: 'Network error',
-        message: error.message || 'Failed to submit score',
-        status: 0
-      };
-      sendMessageToFlutter('scoreSubmitError', {
-        status: 0,
-        error: errorData
-      });
-      
-      // Mark submission complete and show back button
-      scoreSubmitting = false;
-      scoreSubmissionComplete = true;
-      updateGameOverMessage('GAME OVER');
-      showBackButton();
-    });
-  }
-  
-  // Update game over message
-  function updateGameOverMessage(text) {
-    var gameOverTitle = document.getElementById("gameOverTitle");
-    if (gameOverTitle) {
-      gameOverTitle.textContent = text;
-    }
-  }
-  
+
   // Show/hide back button
   function showBackButton() {
     if (backButton) {
@@ -412,55 +99,8 @@ Array.prototype.last = function () {
     }
   }
   
-  // Send message to Flutter app to close window
-  function closeFlutterWindow() {
-    if (window.parent && window.parent !== window) {
-      // If in iframe, send message to parent
-      window.parent.postMessage({ type: 'closeGame' }, '*');
-    } else if (window.flutter_inappwebview) {
-      // If using Flutter InAppWebView
-      window.flutter_inappwebview.callHandler('closeGame');
-    } else {
-      // Fallback: try to close window
-      window.close();
-    }
-  }
-  
   // Initialize layout
   resetGame();
-  
-  // Initialize Flutter params on page load
-  initFlutterParams();
-  
-  // Initially hide play button until session is ready
-  hidePlayButton();
-  
-  // Check for session after a short delay
-  setTimeout(function() {
-    checkSessionAndUpdateUI();
-  }, 100);
-  
-  // Also check on window load event
-  window.addEventListener('load', function() {
-    checkSessionAndUpdateUI();
-  });
-  
-  // Start periodic checking if session not ready
-  if (!sessionReady) {
-    setTimeout(checkSessionAndUpdateUI, 500);
-  }
-  
-  // Re-check on visibility change
-  document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) {
-      checkSessionAndUpdateUI();
-    }
-  });
-  
-  // Also listen for focus events
-  window.addEventListener('focus', function() {
-    checkSessionAndUpdateUI();
-  });
   
   // Keep game drawing continuously in background
   function continuousDraw() {
@@ -476,11 +116,6 @@ Array.prototype.last = function () {
     event.preventDefault();
     event.stopPropagation();
     
-    // Don't start game if session not ready
-    if (!sessionReady) {
-      return false;
-    }
-    
     // Make sure we're not in stretching phase when starting
     if (phase === "stretching") {
       phase = "waiting";
@@ -490,11 +125,10 @@ Array.prototype.last = function () {
       startScreen.style.display = "none";
     }, 500); // Wait for fade out transition
     
-    // Start the timer using Flutter's timer duration
+    // Start the timer
     gameTimer = gameTimerDuration;
     timerStartTime = Date.now();
     isTimerRunning = true;
-    gameStartTime = Date.now();
     timerElement.style.display = "block";
     updateTimerDisplay();
   }
@@ -520,31 +154,15 @@ Array.prototype.last = function () {
   function endGameByTimer() {
     if (isTimerRunning) {
       isTimerRunning = false;
+      showBackButton();
       
-      // Only process game over if not already submitted
-      if (!scoreSubmissionComplete && !scoreSubmitting) {
-        // Reset score submission state (only if not already processing)
-        scoreSubmitting = false;
-        scoreSubmissionComplete = false;
-        
-        // Hide back button initially
-        hideBackButton();
-        
-        // Update game over message
-        if (poolId && sessionId && authToken) {
-          updateGameOverMessage('Submitting score...');
-        } else {
-          updateGameOverMessage('GAME OVER');
-          // If no session, show back button immediately
-          showBackButton();
-        }
-        
-        finalScoreElement.innerText = score;
-        gameOverScreen.classList.add("visible");
-        
-        // Submit score to Flutter backend (only once)
-        submitScoreToFlutter();
+      const gameOverTitle = document.getElementById("gameOverTitle");
+      if (gameOverTitle) {
+        gameOverTitle.textContent = 'GAME OVER';
       }
+      
+      finalScoreElement.innerText = score;
+      gameOverScreen.classList.add("visible");
     }
   }
   
@@ -565,17 +183,12 @@ Array.prototype.last = function () {
     gameOverScreen.classList.remove("visible");
     scoreElement.innerText = score;
     
-    // Reset score submission state
-    scoreSubmitting = false;
-    scoreSubmissionComplete = false;
-    
     // Reset timer
     gameTimer = gameTimerDuration;
     timerStartTime = null;
     isTimerRunning = false;
     timerElement.style.display = "none";
     
-    // Update play button visibility based on session
     showPlayButton();
   
     // The first platform is always the same
@@ -852,31 +465,15 @@ Array.prototype.last = function () {
         if (heroY > maxHeroY) {
           // Stop timer and show game over screen
           isTimerRunning = false;
+          showBackButton();
           
-          // Only process game over if not already submitted
-          if (!scoreSubmissionComplete && !scoreSubmitting) {
-            // Reset score submission state (only if not already processing)
-            scoreSubmitting = false;
-            scoreSubmissionComplete = false;
-            
-            // Hide back button initially
-            hideBackButton();
-            
-            // Update game over message
-            if (poolId && sessionId && authToken) {
-              updateGameOverMessage('Submitting score...');
-            } else {
-              updateGameOverMessage('GAME OVER');
-              // If no session, show back button immediately
-              showBackButton();
-            }
-            
-            finalScoreElement.innerText = score;
-            gameOverScreen.classList.add("visible");
-            
-            // Submit score to Flutter backend (only once)
-            submitScoreToFlutter();
+          const gameOverTitle = document.getElementById("gameOverTitle");
+          if (gameOverTitle) {
+            gameOverTitle.textContent = 'GAME OVER';
           }
+          
+          finalScoreElement.innerText = score;
+          gameOverScreen.classList.add("visible");
           
           return;
         }
@@ -946,21 +543,19 @@ Array.prototype.last = function () {
   restartButton.addEventListener("click", handleRestart);
   restartButton.addEventListener("touchend", handleRestart);
   
-  // Handle back button - close Flutter window
+  // Handle back button - go back to start screen
   function handleBack(event) {
     event.preventDefault();
     event.stopPropagation();
-    closeFlutterWindow();
+    gameOverScreen.classList.remove("visible");
+    startScreen.classList.remove("hidden");
+    startScreen.style.display = "flex";
+    resetGame();
     return false;
   }
   
   backButton.addEventListener("click", handleBack);
   backButton.addEventListener("touchend", handleBack);
-  
-  // Optional: Handle browser back button
-  window.addEventListener('popstate', function(event) {
-    closeFlutterWindow();
-  });
   
   function drawPlatforms() {
     platforms.forEach(({ x, w }) => {
